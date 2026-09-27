@@ -12,9 +12,13 @@ import { InteractionStore } from "./store.js";
 const BOT_TOKEN = required("TELEGRAM_BOT_TOKEN");
 const ALLOWED_USER_ID = positiveInt(required("TELEGRAM_ALLOWED_USER_ID"), "TELEGRAM_ALLOWED_USER_ID");
 const PUBLIC_ORIGIN = publicOrigin(required("PUBLIC_ORIGIN"));
+const ARTIFACT_CAPABILITY = capability(required("ARTIFACT_CAPABILITY"));
 const PORT = positiveInt(process.env.PORT ?? "3000", "PORT");
 const DATA_FILE = process.env.DATA_FILE?.trim() || "./data/interactions.json";
 const OFFSET_FILE = process.env.OFFSET_FILE?.trim() || "./data/telegram-offset.json";
+
+const ARTIFACT_PATH = `/artifact/${encodeURIComponent(ARTIFACT_CAPABILITY)}`;
+const ARTIFACT_INTERACTION_PATH = `/api/artifacts/${encodeURIComponent(ARTIFACT_CAPABILITY)}/interactions`;
 
 const INDEX_HTML = await readFile(
   fileURLToPath(new URL("../public/index.html", import.meta.url)),
@@ -44,10 +48,18 @@ function publicOrigin(raw) {
   return url.origin;
 }
 
+function capability(raw) {
+  if (!/^[A-Za-z0-9_-]{43,128}$/u.test(raw)) {
+    throw new Error("ARTIFACT_CAPABILITY must be 43-128 base64url characters");
+  }
+  return raw;
+}
+
 function reply(response, status, contentType, body, extraHeaders = {}) {
   response.writeHead(status, {
     "content-type": contentType,
     "cache-control": "no-store",
+    "referrer-policy": "no-referrer",
     "x-content-type-options": "nosniff",
     ...extraHeaders,
   });
@@ -90,10 +102,12 @@ const server = createServer((request, response) => {
       return;
     }
 
-    if (request.method === "GET" && url.pathname === "/artifact") {
+    if (request.method === "GET" && url.pathname === ARTIFACT_PATH) {
+      const existing = store.getByArtifactId(DEMO_ARTIFACT_ID);
       const rendered = renderAuthoredArtifactPage(DEMO_ARTIFACT, {
         artifactId: DEMO_ARTIFACT_ID,
-        interactionEndpoint: `/api/artifacts/${DEMO_ARTIFACT_ID}/interactions`,
+        interactionEndpoint: ARTIFACT_INTERACTION_PATH,
+        submittedWake: existing === null ? null : makeWakePayload(existing.ref),
       });
       reply(response, 200, "text/html; charset=utf-8", rendered.html, {
         "content-security-policy": rendered.csp,
@@ -133,26 +147,32 @@ const server = createServer((request, response) => {
       return;
     }
 
-    if (
-      request.method === "POST" &&
-      url.pathname === `/api/artifacts/${DEMO_ARTIFACT_ID}/interactions`
-    ) {
+    if (request.method === "POST" && url.pathname === ARTIFACT_INTERACTION_PATH) {
       try {
         const body = await readJson(request);
         const rawValues = exactValuesBody(body);
         if (rawValues === null) throw new Error("invalid_submission");
         const values = validateInteractionValues(DEMO_ARTIFACT, rawValues);
-        const record = await store.create({
+        const result = await store.createSingle({
           artifactId: DEMO_ARTIFACT_ID,
           values,
         });
-        json(response, 201, {
-          event_ref: record.ref,
-          wake: makeWakePayload(record.ref),
+        json(response, result.created ? 201 : 200, {
+          status: result.created ? "submitted" : "existing",
+          event_ref: result.record.ref,
+          wake: makeWakePayload(result.record.ref),
         });
       } catch (error) {
         const code = error instanceof Error ? error.message : "invalid_request";
-        json(response, code === "request_too_large" ? 413 : 400, { error: code });
+        if (code === "request_too_large") {
+          json(response, 413, { error: code });
+          return;
+        }
+        if (code === "interaction_conflict") {
+          json(response, 409, { error: code });
+          return;
+        }
+        json(response, 400, { error: code });
       }
       return;
     }
@@ -273,7 +293,7 @@ async function handleUpdate(update) {
           keyboard: [
             [{
               text: "💌 Open authored Artifact",
-              web_app: { url: `${PUBLIC_ORIGIN}/artifact` },
+              web_app: { url: `${PUBLIC_ORIGIN}${ARTIFACT_PATH}` },
             }],
             [{
               text: "🧪 Open minimal roundtrip",
