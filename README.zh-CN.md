@@ -2,43 +2,67 @@
 
 [English](README.md)
 
-**从 Bot 打开 Mini App，在里面提交内容，再把这次交互送回 Bot。**
+**让 agent 自己做一张小网页，让你在里面回应，再把这份回应送回原来的那个 agent。**
 
-很多 Telegram Mini App 教程只讲到这里：
+聊天是一条线。
+
+但有些时候，agent 想递给你的东西并不像一句普通消息——它可能是一封信、一张小票、一个选择、一份小礼物，或者一页只为这一刻出现的小界面。
+
+Telegram Mini App 很适合装这些东西。可大多数教程只讲到：
 
 ```text
 bot → 打开 Mini App
 ```
 
-这个仓库讲的是回程：
+这个仓库讲的是怎么把另一半也接回来：
 
 ```text
-Telegram bot
-    ↓ KeyboardButton.web_app
-Mini App
-    ↓ POST 完整提交内容
-你的后端
-    ↓ 持久化 → 返回 opaque event_ref
-Mini App
-    ↓ Telegram.WebApp.sendData({ ref })
-Telegram message.web_app_data
+agent / bot
     ↓
-bot 找回已保存的 interaction
+Mini App
+    ↓ 用户在里面操作
+先持久化完整 interaction
     ↓
-reply / agent turn
+只返回一个 opaque ref
+    ↓ Telegram.WebApp.sendData(ref)
+message.web_app_data
+    ↓
+bot 重新取回 + 校验 interaction
+    ↓
+原来的 handler / 原来的 agent
+    ↓
+Telegram 回复
 ```
 
-核心只有一句：
+这里的可运行示例故意很小，但它来自我们实际使用的一套 **interactive Artifact** 思路：agent 可以做一张自己的小页面，用户可以在里面碰它、写一点东西，而这份回应最后真的会回到 agent 手里。
 
-> **先持久化 interaction。通过 Telegram 只发送一个小而 opaque 的 reference。**
+## 真正有意思的是“谁有哪种权力”
 
-这样 Telegram handoff 会一直很小，retry 更容易做成幂等，真正的提交内容也仍然由你的后端负责。
+这套东西最值得分享的，其实不是“把 AI 塞进网页”。
 
-这个仓库是一套从真实长期运行的 Telegram + AI agent 集成里抽出来的小型 reference implementation。
+而是这一句：
 
-## 整个技巧
+> **Agent 决定它长什么样；Host 决定它能做什么。**
 
-Mini App 先把用户输入保存到后端：
+在完整版本里：
+
+```text
+agent 负责
+  文案 · 构图 · HTML · CSS · interaction intent
+
+可信 host 负责
+  校验 · sandbox · network · 持久化 · Telegram · retry
+```
+
+这样，agent 可以真的拥有视觉创作权，却不需要拿到 arbitrary JavaScript，也不需要拥有环境里的网络权限。
+
+所以安全并不等于重新塞回一套固定模板。你可以让页面长得每次都不一样，同时把真正危险的能力牢牢留在 host 手里。
+
+这个仓库里的 runnable demo 故意只放一个朴素 textarea，让人先把 round trip 看明白。更完整的 authored-page / sandbox / trusted-bridge 结构放在 [Architecture](docs/ARCHITECTURE.md)。
+
+## 回程到底怎么走
+
+Mini App 先把用户真正填写的内容保存下来：
 
 ```json
 {
@@ -46,7 +70,7 @@ Mini App 先把用户输入保存到后端：
 }
 ```
 
-后端持久化后返回：
+后端确认持久化成功，再给它一个 opaque reference：
 
 ```json
 {
@@ -54,7 +78,7 @@ Mini App 先把用户输入保存到后端：
 }
 ```
 
-Mini App 再只把这份 bounded wake payload 交给 Telegram：
+真正经过 Telegram 的只有这一小段 wake-up：
 
 ```json
 {
@@ -64,9 +88,28 @@ Mini App 再只把这份 bounded wake payload 交给 Telegram：
 }
 ```
 
-Telegram 会把它作为 `message.web_app_data` 送回 bot。Bot 验证发送者、解析 reference、加载已保存的 interaction，再交给普通 reply handler 或 agent。
+Telegram 把它作为 `message.web_app_data` 送回 bot。Bot 验证发送者、解析 ref、重新取回已经提交的 interaction，再把它交回普通 reply path 或原来的 agent。
 
-完整用户提交不需要塞进 `sendData()`。
+完整用户内容根本不需要塞进 `sendData()`。
+
+可以把它理解成：
+
+> **Site 负责把信保存好，Telegram 只负责按门铃。**
+
+## 这套 pattern 能拿来做什么？
+
+不只是表单。
+
+它很适合：
+
+- agent 自己设计的一封信，末尾留一个小口袋让用户回一句；
+- 一次选择、评分或确认，之后 agent 能继续回应；
+- 一份小礼物、纪念页、receipt；
+- approval / confirmation flow；
+- 临时出现、做完就回到聊天里的小工具；
+- 不想被固定 widget/template 限死的 companion UI。
+
+而且它天然可以异步：Mini App 不需要一直挂着等模型想完，agent 也不需要为了网页再养一个“第二脑子”。
 
 ## 跑一下
 
@@ -93,50 +136,36 @@ npm run verify
 npm start
 ```
 
-`PUBLIC_ORIGIN` 必须是 Telegram 客户端能够访问、并指向这个 server 的 HTTPS URL。
+`PUBLIC_ORIGIN` 必须是 Telegram 客户端能够访问的 HTTPS URL。
 
-给 bot 发送 `/start`，点击 **Open Mini App**，写一点内容并提交。Telegram 应该关闭 Mini App，并把一条 `web_app_data` service message 送回 bot。
+给 bot 发送 `/start`，点击 **Open Mini App**，写一点东西并提交。Telegram 会把一条 `web_app_data` service message 送回 bot；bot 再取回之前保存的 interaction，然后回复。
 
 ## Reference implementation 里有什么？
 
 ```text
-public/index.html   Mini App UI + POST + sendData()
-src/protocol.js    精确、bounded 的 wake-payload contract
-src/store.js       很小的持久化 file-backed interaction store
+public/index.html   Mini App UI + persist + sendData()
+src/protocol.js    封闭、bounded 的 wake-payload contract
+src/store.js       很小的 durable interaction store
 src/server.js      HTTP server + Telegram long polling
-test/              protocol 和 store tests
+test/              protocol 和 persistence tests
 ```
 
-没有 Telegram framework，也没有 web framework。示例只用 Node 自带的 `http`、`fetch`、`crypto` 和 `node:test`，让整条 round trip 一眼能看明白。
+没有 Telegram framework，也没有 web framework。这里故意把东西压小，好让别人能直接看懂 round trip，而不是先学我们的技术栈。
 
-## Production 只记七条
+## 最值得带走的三条
 
-1. **先 persist，再 `sendData()`。** Telegram 应该传 committed data 的 reference，而不是成为这份数据唯一的副本。
-2. **把 `web_app_data` 当成独立 ingress。** 不要把它当普通聊天消息处理。
-3. **验证 sender 和 private chat。** 不能因为 payload 格式合法就接受 interaction。
-4. **不要信任 `button_text`。** 真正有用的是 `web_app_data.data`。
-5. **一个 bot token 只保留一个 update consumer。** 第二个 `getUpdates` worker 可能触发 409 conflict。
-6. **重复 reference 必须无害。** Telegram redelivery 或 retry 不应该让同一个 interaction 跑两次 agent turn。
-7. **长期运行的 bot 要先让 durable state 接住 update，再推进 offset。** 先持久化 interaction job，再 acknowledge Telegram。
+1. **先保存，再通知。** Telegram 传的是 committed data 的 reference，不是数据唯一的副本。
+2. **视觉创作权不等于执行权。** 如果页面由 agent 创作，network、persistence、Telegram 仍然放在 trusted bridge。
+3. **回程重新校验。** 浏览器侧的 store 是 transport surface，不自动等于 agent 的 canonical authority。
 
-## 这个仓库只负责什么
+长期运行的 bot 还应该让重复 ref 无害，并在推进 Telegram offset 之前，先让 durable state 真正接住这次 interaction。
 
-只负责这条 round-trip pattern：
+## 文档
 
-- 从 Telegram bot 打开 Mini App；
-- 持久化一次 submission；
-- 给 Telegram 一个 bounded opaque reference；
-- 接收 `message.web_app_data`；
-- 找回已持久化的 submission；
-- 把它交给 reply handler 或 agent。
-
-认证、model provider、memory、database、deployment、secret、observability 和产品 UI 仍然属于你的应用。
-
-## Pitfalls
-
-这个项目真正值钱的不只是 happy path。真实接入过程中，我们踩过不少很容易漏掉的坑：`sendData()`、`web_app_data`、update ordering、CSP inheritance，以及“测试绿了但真实浏览器没跑”的假象。
-
-生产化之前建议先读 **[真实集成踩坑记录](docs/PITFALLS.md)**。
+| 想看什么 | 去哪里 |
+| --- | --- |
+| 完整 Artifact 权限边界 | [Architecture](docs/ARCHITECTURE.md) |
+| 我们真的踩过哪些坑 | [Pitfalls](docs/PITFALLS.md) |
 
 ## License
 
