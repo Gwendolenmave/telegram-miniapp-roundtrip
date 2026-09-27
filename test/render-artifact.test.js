@@ -26,3 +26,16 @@ test("renders authored content in an opaque sandbox with a dedicated parent CSP"
   assert.match(rendered.csp, /connect-src 'self'/u);
   assert.doesNotMatch(rendered.csp, /script-src[^;]*'unsafe-inline'/u);
 });
+
+test("a previously submitted Artifact renders the same wake ref for re-notification", () => {
+  const wake = JSON.stringify({ v: 1, kind: "artifact.interaction", ref: `ref_${"a".repeat(32)}` });
+  const rendered = renderAuthoredArtifactPage(DEMO_ARTIFACT, {
+    artifactId: DEMO_ARTIFACT_ID,
+    interactionEndpoint: "/api/artifacts/capability/interactions",
+    submittedWake: wake,
+  });
+
+  assert.match(rendered.html, /data-submitted-wake=/u);
+  assert.match(rendered.html, /data-artifact-state=&quot;submitted&quot;/u);
+  assert.match(rendered.html, /kind === &quot;renotify&quot;/u);
+});
