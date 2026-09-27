@@ -6,7 +6,7 @@
   "description": "Agent-authored Telegram Mini App artifacts with a durable return trip to the bot.",
   "scripts": {
     "start": "node --env-file=.env src/server.js",
-    "verify": "node --test test/*.test.js",
+    "verify": "node --check src/server.js && node --test test/*.test.js",
     "verify:browser": "node --test test/browser/*.test.js"
   },
   "engines": {
