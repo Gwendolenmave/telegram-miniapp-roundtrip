@@ -13,6 +13,7 @@ const BOT_TOKEN = required("TELEGRAM_BOT_TOKEN");
 const ALLOWED_USER_ID = positiveInt(required("TELEGRAM_ALLOWED_USER_ID"), "TELEGRAM_ALLOWED_USER_ID");
 const PUBLIC_ORIGIN = publicOrigin(required("PUBLIC_ORIGIN"));
 const ARTIFACT_CAPABILITY = capability(required("ARTIFACT_CAPABILITY"));
+const TELEGRAM_API_ORIGIN = telegramApiOrigin(process.env.TELEGRAM_API_ORIGIN?.trim() || "https://api.telegram.org");
 const PORT = positiveInt(process.env.PORT ?? "3000", "PORT");
 const DATA_FILE = process.env.DATA_FILE?.trim() || "./data/interactions.json";
 const OFFSET_FILE = process.env.OFFSET_FILE?.trim() || "./data/telegram-offset.json";
@@ -53,6 +54,18 @@ function capability(raw) {
     throw new Error("ARTIFACT_CAPABILITY must be 43-128 base64url characters");
   }
   return raw;
+}
+
+function telegramApiOrigin(raw) {
+  const url = new URL(raw);
+  const localHttp =
+    url.protocol === "http:" &&
+    ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
+  if (url.username !== "" || url.password !== "" || url.search !== "" || url.hash !== "") {
+    throw new Error("invalid TELEGRAM_API_ORIGIN");
+  }
+  if (url.protocol !== "https:" && !localHttp) throw new Error("invalid TELEGRAM_API_ORIGIN");
+  return url.origin;
 }
 
 function reply(response, status, contentType, body, extraHeaders = {}) {
@@ -192,7 +205,7 @@ server.listen(PORT, "0.0.0.0", () => {
 void runBotLoop();
 
 async function telegram(method, payload) {
-  const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
+  const response = await fetch(`${TELEGRAM_API_ORIGIN}/bot${BOT_TOKEN}/${method}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
