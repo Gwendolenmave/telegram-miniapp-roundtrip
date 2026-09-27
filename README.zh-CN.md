@@ -58,7 +58,7 @@ agent 负责
 
 所以安全并不等于重新塞回一套固定模板。你可以让页面长得每次都不一样，同时把真正危险的能力牢牢留在 host 手里。
 
-这个仓库里的 runnable demo 故意只放一个朴素 textarea，让人先把 round trip 看明白。更完整的 authored-page / sandbox / trusted-bridge 结构放在 [Architecture](docs/ARCHITECTURE.md)。
+这个仓库现在把两层都真的跑起来了：一个故意朴素的 transport demo，和一个真正使用 sandbox / trusted bridge 的 authored Artifact。
 
 ## 回程到底怎么走
 
@@ -128,6 +128,7 @@ cp .env.example .env
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_ALLOWED_USER_ID=...
 PUBLIC_ORIGIN=https://your-public-https-origin.example
+ARTIFACT_CAPABILITY=...
 ```
 
 然后：
@@ -137,7 +138,7 @@ npm run verify
 npm start
 ```
 
-`PUBLIC_ORIGIN` 必须是 Telegram 客户端能够访问的 HTTPS URL。
+`PUBLIC_ORIGIN` 必须是 Telegram 客户端能够访问的 HTTPS URL。`ARTIFACT_CAPABILITY` 是 authored Artifact 私有 URL 里的 capability；建议用至少 32 个随机字节生成，不要写进源码或日志。
 
 给 bot 发送 `/start`。你会看到两个入口：一个故意朴素的最小 roundtrip，和一个真正的 **authored Artifact**。后者会把 HTML/CSS document contract、opaque sandbox、trusted bridge、typed interaction 校验、持久化、`sendData()`、bot 侧 revalidation 和 Telegram 回复整条链路跑一遍。
 
@@ -145,6 +146,7 @@ npm start
 
 ```text
 public/index.html        故意朴素的最小 roundtrip UI
+src/artifact-tool.js     可直接交给 agent 的 artifact.create tool schema
 src/artifact-schema.js   authored document + typed interaction contract
 src/example-artifact.js  一份完整的 agent-authored 示例
 src/render-artifact.js   opaque sandbox + CSP + trusted bridge
@@ -156,6 +158,14 @@ test/                    schema、持久化、renderer、真实浏览器 regress
 ```
 
 没有 Telegram framework，也没有 web framework。这里故意把东西压小，好让别人能直接看懂 round trip，而不是先学我们的技术栈。
+
+## 接你自己的 agent
+
+`src/artifact-tool.js` 直接导出了 provider-neutral 的 `ARTIFACT_CREATE_TOOL`。把这份 schema 给支持 tool calling 的模型，再把模型返回的 arguments 丢进 `parseArtifactCreateArguments()`，通过以后持久化 document，然后交给同一套 trusted host 渲染即可。
+
+Demo 仍然保留一份 hard-coded Artifact，这样别人不用先准备模型 API key 就能看懂浏览器和 Telegram 回程；但“agent 怎么产出 Artifact”本身已经是可复用代码，不再只是文档里的概念。
+
+authored 示例是 **single-submit**：同内容 retry 会拿回同一个 ref，不同的第二次提交会 conflict；重新打开已经提交的 Artifact 时只会用原来的 ref 再通知 Telegram，不会偷偷造第二个 semantic event。
 
 ## 最值得带走的三条
 
@@ -170,7 +180,7 @@ test/                    schema、持久化、renderer、真实浏览器 regress
 这次最难抓的 bug 本来就发生在浏览器策略层，所以这个仓库不再满足于“字符串在 HTML 里”：
 
 ```sh
-npx playwright install chromium
+npx playwright install --with-deps chromium
 npm run verify:browser
 ```
 
