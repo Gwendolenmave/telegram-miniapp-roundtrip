@@ -1,15 +1,19 @@
 {
   "name": "telegram-miniapp-roundtrip",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Minimal Telegram Mini App to bot interaction round trip.",
+  "description": "Agent-authored Telegram Mini App artifacts with a durable return trip to the bot.",
   "scripts": {
     "start": "node --env-file=.env src/server.js",
-    "verify": "node --test"
+    "verify": "node --test test/*.test.js",
+    "verify:browser": "node --test test/browser/*.test.js"
   },
   "engines": {
     "node": ">=22"
+  },
+  "devDependencies": {
+    "playwright": "^1.55.0"
   },
   "license": "SEE LICENSE IN LICENSE.md"
 }
