@@ -1,5 +1,7 @@
 # Telegram Mini App Roundtrip
 
+[简体中文](README.zh-CN.md)
+
 **Open a Mini App from a bot, submit something inside it, and get that interaction back to the bot.**
 
 Most Telegram Mini App examples stop here:
