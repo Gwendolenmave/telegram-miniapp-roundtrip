@@ -198,10 +198,17 @@ same ref/event id → same logical interaction
 
 Exactly-once execution is not required. Stable identifiers and idempotent effects are usually enough to avoid duplicate user-visible behavior.
 
-## Why the runnable example is smaller
+## What the runnable repository includes
 
-This repository's executable demo stops at a static textarea and echo handler so the Telegram round trip can be understood in a few files.
+The repository now ships both layers:
 
-The larger Artifact pattern adds authored HTML/CSS, typed interactions, sandboxing, CSP, a trusted bridge, and an agent wake lane. Those are useful once you need them; they should not be prerequisites for understanding `sendData() → web_app_data`.
+```text
+/           minimal static textarea roundtrip
+/artifact   authored HTML/CSS + typed interactions + opaque sandbox + trusted bridge
+```
+
+The authored route implements the reusable Artifact core from this document. It deliberately stops before product-specific concerns such as a model provider, memory system, D1 schema, transcript store, or a large durable job scheduler.
+
+The bot-side example still preserves the important recovery boundary: interaction values are persisted, revalidated against the Artifact document, a canonical reply is persisted before delivery, and the Telegram update offset is durable.
 
 Read [PITFALLS.md](PITFALLS.md) for the bugs we hit while building the full version.

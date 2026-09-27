@@ -6,6 +6,25 @@ function token(prefix, bytes = 24) {
   return `${prefix}_${randomBytes(bytes).toString("base64url")}`;
 }
 
+function isValues(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.values(value).every((entry) =>
+    typeof entry === "string" || (typeof entry === "number" && Number.isFinite(entry))
+  );
+}
+
+function isRecord(value) {
+  return value !== null &&
+    typeof value === "object" &&
+    typeof value.ref === "string" &&
+    typeof value.event_id === "string" &&
+    typeof value.artifact_id === "string" &&
+    typeof value.submitted_at === "string" &&
+    isValues(value.values) &&
+    (value.reply_text === null || typeof value.reply_text === "string") &&
+    (value.delivered_at === null || typeof value.delivered_at === "string");
+}
+
 export class InteractionStore {
   constructor(filePath) {
     this.filePath = resolve(filePath);
@@ -19,15 +38,7 @@ export class InteractionStore {
       const parsed = JSON.parse(await readFile(this.filePath, "utf8"));
       if (!Array.isArray(parsed)) throw new Error("invalid_store_shape");
       for (const record of parsed) {
-        if (
-          record &&
-          typeof record === "object" &&
-          typeof record.ref === "string" &&
-          typeof record.event_id === "string" &&
-          typeof record.note === "string"
-        ) {
-          this.records.set(record.ref, Object.freeze({ ...record }));
-        }
+        if (isRecord(record)) this.records.set(record.ref, Object.freeze({ ...record, values: Object.freeze({ ...record.values }) }));
       }
     } catch (error) {
       if (error && typeof error === "object" && error.code === "ENOENT") return;
@@ -35,17 +46,19 @@ export class InteractionStore {
     }
   }
 
-  async create(note) {
-    if (typeof note !== "string" || note.trim().length === 0 || note.length > 2000) {
-      throw new Error("invalid_note");
+  async create({ artifactId, values }) {
+    if (typeof artifactId !== "string" || artifactId.length === 0 || artifactId.length > 120 || !isValues(values)) {
+      throw new Error("invalid_interaction_record");
     }
 
     const record = Object.freeze({
       event_id: token("evt", 18),
       ref: token("ref", 24),
+      artifact_id: artifactId,
       submitted_at: new Date().toISOString(),
-      note,
-      handled_at: null,
+      values: Object.freeze({ ...values }),
+      reply_text: null,
+      delivered_at: null,
     });
 
     this.records.set(record.ref, record);
@@ -57,10 +70,24 @@ export class InteractionStore {
     return this.records.get(ref) ?? null;
   }
 
-  async markHandled(ref) {
+  async prepareReply(ref, replyText) {
     const current = this.records.get(ref);
-    if (current === undefined || current.handled_at !== null) return current ?? null;
-    const next = Object.freeze({ ...current, handled_at: new Date().toISOString() });
+    if (current === undefined) return null;
+    if (current.reply_text !== null) return current;
+    if (typeof replyText !== "string" || replyText.trim().length === 0 || replyText.length > 100_000) {
+      throw new Error("invalid_reply_text");
+    }
+    const next = Object.freeze({ ...current, reply_text: replyText });
+    this.records.set(ref, next);
+    await this.persist();
+    return next;
+  }
+
+  async markDelivered(ref) {
+    const current = this.records.get(ref);
+    if (current === undefined) return null;
+    if (current.delivered_at !== null) return current;
+    const next = Object.freeze({ ...current, delivered_at: new Date().toISOString() });
     this.records.set(ref, next);
     await this.persist();
     return next;

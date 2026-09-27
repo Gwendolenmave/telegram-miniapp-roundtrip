@@ -118,6 +118,7 @@ Telegram 把它作为 `message.web_app_data` 送回 bot。Bot 验证发送者、
 ```sh
 git clone https://github.com/Gwendolenmave/telegram-miniapp-roundtrip.git
 cd telegram-miniapp-roundtrip
+npm install
 cp .env.example .env
 ```
 
@@ -138,16 +139,20 @@ npm start
 
 `PUBLIC_ORIGIN` 必须是 Telegram 客户端能够访问的 HTTPS URL。
 
-给 bot 发送 `/start`，点击 **Open Mini App**，写一点东西并提交。Telegram 会把一条 `web_app_data` service message 送回 bot；bot 再取回之前保存的 interaction，然后回复。
+给 bot 发送 `/start`。你会看到两个入口：一个故意朴素的最小 roundtrip，和一个真正的 **authored Artifact**。后者会把 HTML/CSS document contract、opaque sandbox、trusted bridge、typed interaction 校验、持久化、`sendData()`、bot 侧 revalidation 和 Telegram 回复整条链路跑一遍。
 
 ## Reference implementation 里有什么？
 
 ```text
-public/index.html   Mini App UI + persist + sendData()
-src/protocol.js    封闭、bounded 的 wake-payload contract
-src/store.js       很小的 durable interaction store
-src/server.js      HTTP server + Telegram long polling
-test/              protocol 和 persistence tests
+public/index.html        故意朴素的最小 roundtrip UI
+src/artifact-schema.js   authored document + typed interaction contract
+src/example-artifact.js  一份完整的 agent-authored 示例
+src/render-artifact.js   opaque sandbox + CSP + trusted bridge
+src/protocol.js          封闭、bounded 的 Telegram wake contract
+src/store.js             durable interaction + reply state
+src/state.js             durable Telegram update offset
+src/server.js            HTTP routes + bot long polling
+test/                    schema、持久化、renderer、真实浏览器 regression
 ```
 
 没有 Telegram framework，也没有 web framework。这里故意把东西压小，好让别人能直接看懂 round trip，而不是先学我们的技术栈。
@@ -159,6 +164,17 @@ test/              protocol 和 persistence tests
 3. **回程重新校验。** 浏览器侧的 store 是 transport surface，不自动等于 agent 的 canonical authority。
 
 长期运行的 bot 还应该让重复 ref 无害，并在推进 Telegram offset 之前，先让 durable state 真正接住这次 interaction。
+
+## 真实浏览器 regression
+
+这次最难抓的 bug 本来就发生在浏览器策略层，所以这个仓库不再满足于“字符串在 HTML 里”：
+
+```sh
+npx playwright install chromium
+npm run verify:browser
+```
+
+CI 会安装 Chromium 和系统依赖，并把这条 regression 当 hard gate。测试里还保留了 **pre-fix CSP negative control**，证明旧策略真的会把页面重新打回裸 HTML。
 
 ## 文档
 

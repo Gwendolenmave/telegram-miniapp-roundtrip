@@ -112,6 +112,7 @@ Requires **Node.js 22+** and a Telegram bot token.
 ```sh
 git clone https://github.com/Gwendolenmave/telegram-miniapp-roundtrip.git
 cd telegram-miniapp-roundtrip
+npm install
 cp .env.example .env
 ```
 
@@ -132,16 +133,20 @@ npm start
 
 `PUBLIC_ORIGIN` must be an HTTPS URL that your Telegram client can reach.
 
-Send `/start` to the bot, tap **Open Mini App**, write something, and submit it. Telegram should deliver a `web_app_data` service message back to the bot, which reloads the saved interaction and replies.
+Send `/start` to the bot. You get two buttons: a deliberately boring minimal roundtrip and the full **authored Artifact** example. The authored version exercises the HTML/CSS document contract, opaque sandbox, trusted bridge, typed interaction validation, persistence, `sendData()`, bot-side revalidation, and Telegram reply.
 
 ## What is in the reference implementation?
 
 ```text
-public/index.html   Mini App UI + persist + sendData()
-src/protocol.js    closed, bounded wake-payload contract
-src/store.js       tiny durable interaction store
-src/server.js      HTTP server + Telegram long polling
-test/              protocol and persistence tests
+public/index.html        deliberately minimal roundtrip UI
+src/artifact-schema.js   authored document + typed interaction contract
+src/example-artifact.js  one complete agent-authored example
+src/render-artifact.js   opaque sandbox + CSP + trusted bridge
+src/protocol.js          closed, bounded Telegram wake contract
+src/store.js             durable interaction + reply state
+src/state.js             durable Telegram update offset
+src/server.js            HTTP routes + bot long polling
+test/                    schema, persistence, renderer, browser regression
 ```
 
 There is no Telegram framework and no web framework. The point is to keep the round trip visible enough that you can steal the pattern without adopting somebody else's stack.
@@ -153,6 +158,17 @@ There is no Telegram framework and no web framework. The point is to keep the ro
 3. **Revalidate on the way back.** A browser-facing store is transport, not your agent's canonical authority.
 
 For long-running bots, also make duplicate refs harmless and durably own the interaction before advancing the Telegram update offset.
+
+## Real browser regression
+
+The bug that shaped this design lived in browser policy, so the repository includes a real Chromium test rather than stopping at string assertions:
+
+```sh
+npx playwright install chromium
+npm run verify:browser
+```
+
+CI installs Chromium with its system dependencies and treats this regression as a hard gate. The test also serves the **pre-fix CSP as a negative control** and proves the naked-HTML failure comes back.
 
 ## Documentation
 
