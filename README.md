@@ -56,7 +56,7 @@ That gives the agent real visual authorship without giving generated markup arbi
 
 You do not need a finite template library to stay safe, and you do not need to give the model the keys to the browser either.
 
-The small app in this repository uses a plain textarea so the transport stays easy to read. See [Architecture](docs/ARCHITECTURE.md) for the authored-page version of the same boundary.
+The repository ships both layers: a deliberately plain transport demo and a real authored Artifact route using the same sandbox / trusted-bridge boundary described below.
 
 ## The return trip
 
@@ -122,6 +122,7 @@ Fill in:
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_ALLOWED_USER_ID=...
 PUBLIC_ORIGIN=https://your-public-https-origin.example
+ARTIFACT_CAPABILITY=...
 ```
 
 Then:
@@ -131,7 +132,7 @@ npm run verify
 npm start
 ```
 
-`PUBLIC_ORIGIN` must be an HTTPS URL that your Telegram client can reach.
+`PUBLIC_ORIGIN` must be an HTTPS URL that your Telegram client can reach. `ARTIFACT_CAPABILITY` is the private capability embedded in the authored Artifact URL; generate at least 32 random bytes and keep it out of logs and source control.
 
 Send `/start` to the bot. You get two buttons: a deliberately boring minimal roundtrip and the full **authored Artifact** example. The authored version exercises the HTML/CSS document contract, opaque sandbox, trusted bridge, typed interaction validation, persistence, `sendData()`, bot-side revalidation, and Telegram reply.
 
@@ -139,6 +140,7 @@ Send `/start` to the bot. You get two buttons: a deliberately boring minimal rou
 
 ```text
 public/index.html        deliberately minimal roundtrip UI
+src/artifact-tool.js     drop-in artifact.create tool schema for an agent
 src/artifact-schema.js   authored document + typed interaction contract
 src/example-artifact.js  one complete agent-authored example
 src/render-artifact.js   opaque sandbox + CSP + trusted bridge
@@ -150,6 +152,14 @@ test/                    schema, persistence, renderer, browser regression
 ```
 
 There is no Telegram framework and no web framework. The point is to keep the round trip visible enough that you can steal the pattern without adopting somebody else's stack.
+
+## Plug in your own agent
+
+`src/artifact-tool.js` exports `ARTIFACT_CREATE_TOOL`, a provider-neutral tool definition with the same authored document boundary used by the demo. Give that schema to your tool-calling model, run the returned arguments through `parseArtifactCreateArguments()`, persist the accepted document, and render it with the same trusted host.
+
+The demo keeps one hard-coded Artifact so you can understand the browser and Telegram path without needing an API key. The agent contract is still real code, not pseudocode.
+
+The authored example is **single-submit**: an identical retry returns the same committed reference, a different second submission conflicts, and reopening the page re-notifies Telegram with the existing reference instead of creating another semantic event.
 
 ## Three rules worth keeping
 
@@ -164,7 +174,7 @@ For long-running bots, also make duplicate refs harmless and durably own the int
 The bug that shaped this design lived in browser policy, so the repository includes a real Chromium test rather than stopping at string assertions:
 
 ```sh
-npx playwright install chromium
+npx playwright install --with-deps chromium
 npm run verify:browser
 ```
 
