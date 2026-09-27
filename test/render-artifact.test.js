@@ -37,5 +37,5 @@ test("a previously submitted Artifact renders the same wake ref for re-notificat
 
   assert.match(rendered.html, /data-submitted-wake=/u);
   assert.match(rendered.html, /data-artifact-state=&quot;submitted&quot;/u);
-  assert.match(rendered.html, /kind === &quot;renotify&quot;/u);
+  assert.match(rendered.html, /send\(&quot;renotify&quot;\)/u);
 });
