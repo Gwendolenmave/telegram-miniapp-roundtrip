@@ -13,6 +13,12 @@ function isValues(value) {
   );
 }
 
+function canonicalValues(values) {
+  const sorted = {};
+  for (const key of Object.keys(values).sort()) sorted[key] = values[key];
+  return JSON.stringify(sorted);
+}
+
 function isRecord(value) {
   return value !== null &&
     typeof value === "object" &&
@@ -38,7 +44,12 @@ export class InteractionStore {
       const parsed = JSON.parse(await readFile(this.filePath, "utf8"));
       if (!Array.isArray(parsed)) throw new Error("invalid_store_shape");
       for (const record of parsed) {
-        if (isRecord(record)) this.records.set(record.ref, Object.freeze({ ...record, values: Object.freeze({ ...record.values }) }));
+        if (isRecord(record)) {
+          this.records.set(
+            record.ref,
+            Object.freeze({ ...record, values: Object.freeze({ ...record.values }) }),
+          );
+        }
       }
     } catch (error) {
       if (error && typeof error === "object" && error.code === "ENOENT") return;
@@ -66,8 +77,32 @@ export class InteractionStore {
     return record;
   }
 
+  async createSingle({ artifactId, values }) {
+    if (typeof artifactId !== "string" || artifactId.length === 0 || artifactId.length > 120 || !isValues(values)) {
+      throw new Error("invalid_interaction_record");
+    }
+
+    const existing = this.getByArtifactId(artifactId);
+    if (existing !== null) {
+      if (canonicalValues(existing.values) !== canonicalValues(values)) {
+        throw new Error("interaction_conflict");
+      }
+      return Object.freeze({ record: existing, created: false });
+    }
+
+    const record = await this.create({ artifactId, values });
+    return Object.freeze({ record, created: true });
+  }
+
   get(ref) {
     return this.records.get(ref) ?? null;
+  }
+
+  getByArtifactId(artifactId) {
+    for (const record of this.records.values()) {
+      if (record.artifact_id === artifactId) return record;
+    }
+    return null;
   }
 
   async prepareReply(ref, replyText) {
