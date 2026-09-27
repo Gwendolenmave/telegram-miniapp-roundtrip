@@ -38,6 +38,20 @@ The agent can decide whether a page feels like a letter, a ticket, a tiny contro
 
 At the same time, model-authored markup does not get arbitrary JavaScript, navigation, forms, or network access.
 
+## Agent-facing creation contract
+
+The runnable repository exports a provider-neutral `artifact.create` tool definition in `src/artifact-tool.js`. It constrains the model's output to:
+
+```text
+document:
+  schemaVersion · title · kind · html · css · interactions
+
+interaction_mode:
+  single_submit | none
+```
+
+The model can author presentation, but the host still reparses the returned document before anything is persisted or rendered. The tool schema is guidance at the model boundary; `parseArtifactDocument()` is the runtime authority.
+
 ## Typed behavior, free presentation
 
 The page may be visually free while interaction semantics remain typed.
@@ -105,6 +119,14 @@ The exact policy is application-specific. The invariant is not “use these stri
 
 > The trusted parent may have the minimum network authority required for persistence and Telegram. The authored page should not inherit more authority than it needs.
 
+## Capability URL
+
+A public HTTPS origin does not mean an Artifact must be publicly enumerable.
+
+The tutorial's authored route is behind a high-entropy capability embedded in the Telegram Web App URL. The server only accepts the matching capability for the authored page and its interaction endpoint.
+
+The production system that inspired this tutorial goes one step further and stores a hash of the capability rather than the raw value in its projection database. That storage detail is deliberately not required by this file-backed demo.
+
 ## Persist, then notify
 
 The interaction values are committed before Telegram is notified:
@@ -119,6 +141,24 @@ user submits
 Telegram therefore carries a wake-up, not the canonical interaction body.
 
 This gives the system a durable place to recover from if the client closes, the bot restarts, or the Telegram notification is repeated.
+
+## Single-submit means one semantic event
+
+For the authored demo, the interaction is immutable after the first commit:
+
+```text
+same Artifact + same values
+  → return the same committed ref
+
+same Artifact + different values
+  → conflict
+
+reopen already-submitted Artifact
+  → re-notify with the same ref
+  → do not create another interaction
+```
+
+This is transport-idempotency plus product semantics: a retry is not a new answer.
 
 ## Revalidate on the bot side
 

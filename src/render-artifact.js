@@ -48,7 +48,11 @@ export function preFixCspForRegression() {
 
 const FRAME_BRIDGE = `(() => {
   "use strict";
-  const send = (values) => parent.postMessage({ source: "miniapp-artifact-frame", kind: "submit", values }, "*");
+  const send = (kind, values) => parent.postMessage({
+    source: "miniapp-artifact-frame",
+    kind,
+    ...(values ? { values } : {})
+  }, "*");
   const status = () => document.querySelector("[data-artifact-status]");
   const say = (text) => { const node = status(); if (node) node.textContent = text; };
   const collect = () => {
@@ -82,16 +86,22 @@ const FRAME_BRIDGE = `(() => {
     if (!button) return;
     event.preventDefault();
     button.disabled = true;
+    if (document.body.dataset.artifactState === "submitted") {
+      say("Handing the same interaction back…");
+      send("renotify");
+      return;
+    }
     say("Saving…");
-    send(collect());
+    send("submit", collect());
   });
 
   window.addEventListener("message", (event) => {
     const data = event.data;
     if (!data || data.source !== "miniapp-artifact-host") return;
+    if (data.state === "submitted") document.body.dataset.artifactState = "submitted";
     if (typeof data.text === "string") say(data.text);
     const button = document.querySelector("[data-artifact-submit]");
-    if (button) button.disabled = data.done === true;
+    if (button) button.disabled = false;
   });
 })();`;
 
@@ -111,7 +121,7 @@ function childCsp(nonce) {
   ].join("; ");
 }
 
-function authoredSrcdoc(document, nonce) {
+function authoredSrcdoc(document, nonce, submitted) {
   return `<!doctype html>
 <html>
 <head>
@@ -121,7 +131,7 @@ function authoredSrcdoc(document, nonce) {
 <style>${safeStyleText(document.css)}</style>
 <script nonce="${nonce}">${FRAME_BRIDGE}<\/script>
 </head>
-<body>
+<body data-artifact-state="${submitted ? "submitted" : "fresh"}">
 ${document.html}
 </body>
 </html>`;
@@ -131,14 +141,40 @@ const HOST_BRIDGE = `(() => {
   "use strict";
   const frame = document.querySelector("[data-authored-artifact]");
   if (!frame) return;
-  const tell = (text, done = false) => {
-    frame.contentWindow?.postMessage({ source: "miniapp-artifact-host", text, done }, "*");
+  const tell = (text, state = null) => {
+    frame.contentWindow?.postMessage({
+      source: "miniapp-artifact-host",
+      text,
+      ...(state ? { state } : {})
+    }, "*");
+  };
+  const telegram = () => {
+    const app = window.Telegram?.WebApp;
+    return app && typeof app.sendData === "function" ? app : null;
   };
 
   window.addEventListener("message", async (event) => {
     if (event.source !== frame.contentWindow) return;
     const data = event.data;
-    if (!data || data.source !== "miniapp-artifact-frame" || data.kind !== "submit") return;
+    if (!data || data.source !== "miniapp-artifact-frame") return;
+
+    if (data.kind === "renotify") {
+      const wake = frame.dataset.submittedWake;
+      if (!wake) {
+        tell("No committed interaction is available yet.");
+        return;
+      }
+      const app = telegram();
+      if (!app) {
+        tell("Already saved. Reopen this Artifact from Telegram to notify the bot again.", "submitted");
+        return;
+      }
+      tell("Handing the same interaction back…", "submitted");
+      app.sendData(wake);
+      return;
+    }
+
+    if (data.kind !== "submit") return;
 
     tell("Saving…");
     try {
@@ -149,17 +185,20 @@ const HOST_BRIDGE = `(() => {
       });
       const body = await response.json();
       if (!response.ok || typeof body.wake !== "string") {
-        tell("Not accepted. Check the values and try again.");
+        tell(response.status === 409
+          ? "This Artifact already has a different committed submission."
+          : "Not accepted. Check the values and try again.");
         return;
       }
 
-      const app = window.Telegram?.WebApp;
-      if (!app || typeof app.sendData !== "function") {
-        tell("Saved. Reopen this Artifact from Telegram to hand it back.");
+      frame.dataset.submittedWake = body.wake;
+      const app = telegram();
+      if (!app) {
+        tell("Saved. Reopen this Artifact from Telegram to hand it back.", "submitted");
         return;
       }
 
-      tell("Handing it back to the bot…", true);
+      tell("Handing it back to the bot…", "submitted");
       app.sendData(body.wake);
     } catch {
       tell("Could not reach the host. Try again.");
@@ -167,9 +206,16 @@ const HOST_BRIDGE = `(() => {
   });
 })();`;
 
-export function renderAuthoredArtifactPage(document, { artifactId, interactionEndpoint }) {
+export function renderAuthoredArtifactPage(
+  document,
+  { artifactId, interactionEndpoint, submittedWake = null },
+) {
   const nonce = randomNonce();
-  const srcdoc = escapeHtml(authoredSrcdoc(document, nonce));
+  const submitted = typeof submittedWake === "string" && submittedWake.length > 0;
+  const srcdoc = escapeHtml(authoredSrcdoc(document, nonce, submitted));
+  const submittedAttr = submitted
+    ? ` data-submitted-wake="${escapeHtml(submittedWake)}"`
+    : "";
   const html = `<!doctype html>
 <html lang="en">
 <head>
@@ -186,7 +232,7 @@ export function renderAuthoredArtifactPage(document, { artifactId, interactionEn
   title="${escapeHtml(document.title)}"
   data-authored-artifact
   data-artifact-id="${escapeHtml(artifactId)}"
-  data-interaction-endpoint="${escapeHtml(interactionEndpoint)}"
+  data-interaction-endpoint="${escapeHtml(interactionEndpoint)}"${submittedAttr}
   sandbox="allow-scripts"
   srcdoc="${srcdoc}"
 ></iframe>

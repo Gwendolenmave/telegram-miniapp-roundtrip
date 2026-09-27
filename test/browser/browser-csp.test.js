@@ -10,11 +10,12 @@ import {
   renderAuthoredArtifactPage,
 } from "../../src/render-artifact.js";
 
-async function serve({ cspOverride = null } = {}) {
+async function serve({ cspOverride = null, submittedWake = null } = {}) {
   const submissions = [];
   const rendered = renderAuthoredArtifactPage(DEMO_ARTIFACT, {
     artifactId: DEMO_ARTIFACT_ID,
     interactionEndpoint: `/api/artifacts/${DEMO_ARTIFACT_ID}/interactions`,
+    submittedWake,
   });
 
   const server = createServer(async (request, response) => {
@@ -151,6 +152,28 @@ test("the pre-fix parent CSP reproduces the naked-HTML bug", async () => {
     await page.waitForTimeout(250);
     assert.equal(app.submissions.length, 0);
     assert.equal(await page.evaluate(() => window.__telegramWake), null);
+  } finally {
+    await browser.close();
+    await app.close();
+  }
+});
+
+
+test("a reopened single-submit Artifact re-notifies with the same ref without a second POST", async () => {
+  const wake = makeWakePayload(`ref_${"b".repeat(32)}`);
+  const app = await serve({ submittedWake: wake });
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await installTelegramStub(page);
+    await page.goto(app.url);
+
+    const frame = await authoredFrame(page);
+    await frame.locator("[data-artifact-submit]").click();
+
+    await page.waitForFunction(() => typeof window.__telegramWake === "string");
+    assert.equal(await page.evaluate(() => window.__telegramWake), wake);
+    assert.equal(app.submissions.length, 0);
   } finally {
     await browser.close();
     await app.close();

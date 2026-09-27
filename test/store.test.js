@@ -42,3 +42,38 @@ test("persists interaction values, prepared reply, and delivery state", async ()
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("single-submit replay returns the same ref and differing values conflict", async () => {
+  const root = await mkdtemp(join(tmpdir(), "miniapp-roundtrip-single-"));
+  const file = join(root, "interactions.json");
+
+  try {
+    const store = new InteractionStore(file);
+    await store.init();
+
+    const first = await store.createSingle({
+      artifactId: "artifact-one",
+      values: { reply: "hello", mood: "quiet" },
+    });
+    assert.equal(first.created, true);
+
+    const replay = await store.createSingle({
+      artifactId: "artifact-one",
+      values: { mood: "quiet", reply: "hello" },
+    });
+    assert.equal(replay.created, false);
+    assert.equal(replay.record.ref, first.record.ref);
+
+    await assert.rejects(
+      () => store.createSingle({
+        artifactId: "artifact-one",
+        values: { mood: "playful", reply: "different" },
+      }),
+      /interaction_conflict/u,
+    );
+
+    assert.equal(store.getByArtifactId("artifact-one")?.ref, first.record.ref);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

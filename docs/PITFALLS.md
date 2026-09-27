@@ -303,3 +303,32 @@ They were boundary bugs:
 - visual freedom vs. executable authority.
 
 The round trip stays manageable when each boundary has one clear owner.
+
+
+## 17. A public Mini App origin does not require a public Artifact URL
+
+A tutorial often starts with one obvious route such as:
+
+```text
+/artifact
+```
+
+That is convenient locally and a poor default once the origin is public.
+
+The live integration uses opaque capability paths. This reference now does the same for the authored example: Telegram receives the capability URL, while random visitors do not get an enumerable Artifact route.
+
+Treat the capability like a bearer secret. In a production database, prefer storing its hash rather than the raw capability when practical.
+
+## 18. Single-submit is a semantic rule, not just a disabled button
+
+Disabling a browser button after the first click is not enough. The user can reopen the Mini App, retry after a lost response, or replay transport.
+
+The server must own the rule:
+
+```text
+same values again     → same ref
+different values      → conflict
+reopen + notify again → same ref, no new event
+```
+
+That is why the reference implementation keeps single-submit state in durable storage and renders an already-submitted Artifact in re-notify mode.
