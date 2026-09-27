@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mini App Roundtrip</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">TELEGRAM MINI APP → BOT</p>
+    <h1>Send one note back.</h1>
+    <p>The page saves your note first, then hands Telegram only a tiny opaque reference.</p>
+    <form id="note-form">
+      <label for="note">Note</label>
+      <textarea id="note" name="note" maxlength="2000" required placeholder="Hello from the Mini App"></textarea>
+      <button type="submit">Send to bot</button>
+      <p id="status" role="status" aria-live="polite"></p>
+    </form>
+  </main>
+</body>
+</html>
